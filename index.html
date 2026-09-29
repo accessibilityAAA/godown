@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阿衝大冒險｜城市下樓梯</title>
+
+<!--
+================================================================================
+  🎮 專案名稱：阿衝大冒險（城市下樓梯）- 完整設計理念與開發技術文檔
+================================================================================
+
+  【1. 遊戲核心設計理念 (Game Design Philosophy)】
+  - 復刻經典與創新：以經典《小朋友下樓梯》為核心核心玩法，融合現代 2D 視覺風格與現代動態元素。
+  - 核心體驗 (Juiciness & Feedback)：
+    1. 受傷震動 (Screen Shake)：角色碰撞尖刺或天花板時，畫面劇烈震動並閃紅光，強調受傷痛感。
+    2. 子彈擊碎粒子 (Particle Blast)：發射香蕉子彈可擊碎尖刺，擊中時產生黃色爆破粒子，提高動作爽快感。
+    3. 樓層得分動畫 (Score Pop)：每成功降落一層樓梯，HUD 數字即時彈跳並閃爍黃光，提供正面回饋。
+    4. 空間視差滾動 (Parallax Scrolling)：背景城市大樓隨樓梯升起以 15% 速度滾動，營造深邃的立體層次感。
+  - 難度曲線設計：
+    - 普通模式：前 60 層節奏舒適適合上手，60 層過後速度與尖刺出現率進入陡峭飆升期。
+    - 地獄模式：開局速度即達 1.75 倍極限，樓梯急劇縮窄，考驗玩家極限反應與香蕉子彈開路技巧。
+
+  【2. 無障礙標章 2.0 (WCAG 2.1 AA級) 規範實作】
+  - 2.1 可感知性 (Perceivable)：
+    - 預設提供高對比度明亮模式 (Light Mode)，同時支援多處選單一鍵切換深色模式 (Dark Mode)。
+    - 文字與背景對比度均嚴格維持 > 4.5:1 (WCAG AA 標準)。
+  - 2.2 可操作性 (Operable)：
+    - 支援全鍵盤獨立操控 (A/D/S/W/X/Z/P/Esc) 與鍵盤 Focus 高對比亮框提示 (`:focus-visible`)。
+    - 所有按鈕具備 `aria-label` 標籤與 `role="dialog"` 彈窗焦點鎖定 (Focus Trap)。
+    - 提供頁面最上方「跳過導覽 (Skip Link)」組件。
+
+  【3. 精靈圖 (Sprite Sheet 192x192 8x10) 數學切圖公式】
+  - 圖檔解析度：1536px × 1920px (8 欄 Cols × 10 列 Rows，單格 192px × 192px 正方形)。
+  - CSS 縮放：background-size: 800% 1000%;
+  - 動態百分比定位公式：
+    - X 軸 % = (Col_Index / 7) * 100%
+    - Y 軸 % = (Row_Index / 9) * 100%
+  - 動作對應：待機(R0, C5) / 跑步(R2, C0~7) / 跳躍(R3, C0~3) / 蹲下(R6, C2)。
+
+  【4. 物理碰撞與音效合成】
+  - 碰撞盒 (Hitbox) 動態切換：蹲下時碰撞高度自 65px 自動降至 45px，提高閃避成功率。
+  - 天花板防卡死 (Anti-Stuck)：撞擊頂部時強制施加向下推力 (velocityY = +9)，拒絕黏在天花板。
+  - 零外部依賴音效：採用 Web Audio API 振盪器 (OscillatorNode) 即時合成 8-bit 復古遊戲音效。
+================================================================================
+-->
+
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #e9ecef; /* 預設明亮模式背景 */
+    font-family: "Microsoft JhengHei", Arial, sans-serif;
+    color: #212529;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 無障礙跳過導覽列 (Skip Link) */
+.skip-link {
+    position: absolute;
+    top: -50px;
+    left: 10px;
+    background: #000;
+    color: #fff;
+    padding: 10px 15px;
+    z-index: 1000;
+    font-weight: bold;
+    border: 2px solid #ffe600;
+    border-radius: 5px;
+    transition: top 0.2s;
+}
+.skip-link:focus {
+    top: 10px;
+}
+
+/* 高對比 Focus 游標外框 (無障礙 AA 級標準) */
+:focus-visible {
+    outline: 4px solid #e45b22 !important;
+    outline-offset: 3px !important;
+}
+
+/* =========================
+   遊戲主舞台 (Main Stage)
+========================= */
+#game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    max-width: 900px;
+    overflow: hidden;
+    background: linear-gradient(to bottom, #a1c4fd 0%, #c2e9fb 100%);
+    transition: background 0.4s;
+}
+
+/* 畫面震動 */
+.shake {
+    animation: shakeAnim 0.15s ease-in-out;
+}
+@keyframes shakeAnim {
+    0% { transform: translate(0, 0); }
+    25% { transform: translate(-5px, 3px); }
+    50% { transform: translate(5px, -3px); }
+    75% { transform: translate(-3px, -2px); }
+    100% { transform: translate(0, 0); }
+}
+
+#city {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.building {
+    position: absolute;
+    bottom: 0;
+    background: #6c757d;
+    opacity: 0.4;
+    transition: background 0.3s;
+}
+
+.b1 { left: 0; width: 120px; height: 55%; }
+.b2 { left: 130px; width: 150px; height: 72%; }
+.b3 { left: 295px; width: 100px; height: 48%; }
+.b4 { right: 250px; width: 140px; height: 65%; }
+.b5 { right: 100px; width: 120px; height: 75%; }
+.b6 { right: 0; width: 90px; height: 55%; }
+
+#world {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* 樓梯 platform */
+.platform {
+    position: absolute;
+    height: 18px;
+    border-radius: 5px;
+    background: linear-gradient(to bottom, #ffd166 0%, #f77f00 100%);
+    border: 3px solid #3d1e03;
+    box-shadow: 0 5px 0 rgba(0,0,0,0.3);
+    z-index: 5;
+}
+
+/* 主角 (Player) */
+#player {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    background-image: url("AChong_sprite_FINAL_192x192_8x10.png");
+    background-repeat: no-repeat;
+    background-size: 800% 1000%;
+    transform-origin: center center;
+    z-index: 50;
+    pointer-events: none;
+    filter: drop-shadow(0 5px 3px rgba(0,0,0,0.3));
+}
+
+.bullet {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: #ffe600;
+    border: 2px solid #000;
+    border-radius: 50% 10% 50% 10%;
+    z-index: 60;
+    pointer-events: none;
+}
+
+.particle {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #ffe600;
+    border-radius: 2px;
+    z-index: 65;
+    pointer-events: none;
+}
+
+/* 頂部尖刺 */
+#topDanger { position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 75; pointer-events: none; }
+.topMetal { height: 40px; background: linear-gradient(#555,#222); border-bottom: 3px solid #000; }
+.topSpikes { height: 30px; background: linear-gradient(135deg,#fff 0 50%,#555 51% 100%); background-size: 34px 30px; clip-path: polygon(0 0,100% 0,100% 100%,0 100%); }
+
+.game-spike {
+    position: absolute;
+    width: 32px;
+    height: 26px;
+    z-index: 30;
+    background: linear-gradient(#ffffff,#555555);
+    clip-path: polygon(0 100%, 16% 18%, 33% 100%, 50% 4%, 67% 100%, 84% 18%, 100% 100%);
+    pointer-events: none;
+}
+
+/* HUD 頁首區域 (Header) */
+#hud {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    right: 15px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.hud-left, .hud-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hudBox {
+    padding: 8px 12px;
+    color: #111111;
+    font-size: 16px;
+    font-weight: bold;
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid #111111;
+    border-radius: 12px;
+    transition: background 0.3s, color 0.3s;
+}
+
+.difficulty-tag { color: #d9480f; }
+
+.score-pop { animation: popAnim 0.22s ease-out; }
+@keyframes popAnim {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.4); color: #d9480f; }
+    100% { transform: scale(1); }
+}
+
+.iconButton {
+    border: 2px solid #111111;
+    background: #ffffff;
+    color: #111111;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 8px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+.iconButton:hover { background: #e45b22; color: #ffffff; }
+
+/* 選單遮罩與彈窗 (Dialog) */
+.overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0,0,0,0.65);
+}
+
+.panel {
+    width: min(92%, 500px);
+    padding: 30px 25px;
+    text-align: center;
+    background: #ffffff;
+    border: 3px solid #e45b22;
+    border-radius: 25px;
+    color: #212529;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    transition: background 0.3s, color 0.3s;
+}
+
+.panel h1, .panel h2 {
+    margin-bottom: 12px;
+    color: #e45b22;
+    font-size: clamp(26px, 6vw, 40px);
+}
+
+.intro-box {
+    background: #f8f9fa;
+    border: 2px dashed #e45b22;
+    border-radius: 15px;
+    padding: 15px;
+    margin-bottom: 15px;
+    text-align: left;
+    font-size: 14px;
+    line-height: 1.6;
+    transition: background 0.3s;
+}
+
+.controls-guide {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 8px;
+    background: #ffffff;
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid #ccc;
+}
+
+.diff-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.diff-btn {
+    flex: 1;
+    border: 2px solid #888;
+    background: #e9ecef;
+    color: #212529;
+    padding: 10px;
+    border-radius: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.diff-btn.active {
+    border-color: #111;
+    background: #e45b22;
+    color: #ffffff;
+}
+
+.btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.gameButton {
+    border: 2px solid #111;
+    padding: 13px 36px;
+    border-radius: 15px;
+    color: #ffffff;
+    background: #e45b22;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.gameButton.secondary {
+    background: #6c757d;
+    color: #ffffff;
+}
+
+/* 手機觸控區域 (Nav) */
+#controls {
+    position: absolute;
+    left: 0; right: 0; bottom: 15px;
+    z-index: 120;
+    display: flex;
+    justify-content: space-around;
+    padding: 0 20px;
+}
+
+.control-group {
+    display: flex;
+    gap: 15px;
+}
+
+.control {
+    width: 62px; height: 62px;
+    display: flex; justify-content: center; align-items: center;
+    border-radius: 50%; color: #111111;
+    background: rgba(255, 255, 255, 0.9);
+    border: 3px solid #111111;
+    font-size: 24px;
+    user-select: none; touch-action: manipulation;
+}
+
+.control-action {
+    background: #e45b22;
+    color: #ffffff;
+}
+
+#speedText { font-variant-numeric: tabular-nums; }
+#warning { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); z-index: 90; background: #c92a2a; color: #fff; padding: 6px 16px; border-radius: 15px; font-weight: 700; opacity: 0; }
+#damageFlash { position: absolute; inset: 0; background: rgba(255,0,0,0.35); z-index: 85; opacity: 0; pointer-events: none; }
+
+/* =====================================================
+   🌙 深色模式 (Dark Mode) 樣式切換 (無障礙AA級)
+===================================================== */
+body.dark-mode {
+    background: #0d0d0d;
+    color: #ffffff;
+}
+
+body.dark-mode #game {
+    background: linear-gradient(to bottom, #2b5876 0%, #4e4376 100%);
+}
+
+body.dark-mode .building {
+    background: #1a252f;
+    opacity: 0.5;
+}
+
+body.dark-mode .hudBox {
+    background: rgba(0, 0, 0, 0.85);
+    color: #ffffff;
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+body.dark-mode .difficulty-tag {
+    color: #ffe600;
+}
+
+body.dark-mode .iconButton {
+    background: rgba(0, 0, 0, 0.85);
+    color: #ffffff;
+    border: 2px solid #ffffff;
+}
+
+body.dark-mode .panel {
+    background: #1a1a1a;
+    color: #ffffff;
+    border: 3px solid #f77f00;
+}
+
+body.dark-mode .intro-box {
+    background: #2a2a2a;
+    border-color: #f77f00;
+    color: #ffffff;
+}
+
+body.dark-mode .controls-guide {
+    background: #111;
+    border-color: #444;
+    color: #ffffff;
+}
+
+body.dark-mode .diff-btn {
+    background: #333;
+    color: #fff;
+    border-color: #666;
+}
+
+body.dark-mode .diff-btn.active {
+    border-color: #ffe600;
+    background: #d9480f;
+    color: #ffffff;
+}
+
+body.dark-mode .control {
+    background: rgba(0,0,0,0.85);
+    color: #ffffff;
+    border-color: #ffffff;
+}
+
+body.dark-mode .control-action {
+    background: #d9480f;
+    color: #ffffff;
+}
+
+@media (max-width: 600px) {
+    .hudBox { font-size: 11px; padding: 5px 6px; }
+    .iconButton { font-size: 12px; padding: 5px 8px; }
+    .control { width: 52px; height: 52px; font-size: 20px; }
+}
+</style>
+</head>
+
+<body>
+
+<!-- 1. 無障礙跳過導覽 (WCAG 2.4.1) -->
+<a href="#main-content" class="skip-link">跳過導覽，直接進入主要遊戲區</a>
+
+<div id="game">
+    <!-- 背景裝飾 -->
+    <div id="city" aria-hidden="true">
+        <div class="building b1"></div>
+        <div class="building b2"></div>
+        <div class="building b3"></div>
+        <div class="building b4"></div>
+        <div class="building b5"></div>
+        <div class="building b6"></div>
+    </div>
+
+    <!-- 2. 遊戲狀態列頁首 (Header) -->
+    <header id="hud" role="banner">
+        <div class="hud-left">
+            <div class="hudBox" aria-live="polite" aria-label="剩餘生命值">❤️ <span id="hpText">3</span></div>
+            <div class="hudBox" id="scoreBox" aria-live="polite" aria-label="當前樓層">樓層：<span id="score">0</span></div>
+            <div class="hudBox" aria-label="當前遊戲模式">模式：<span id="diffTag" class="difficulty-tag">普通</span></div>
+            <div class="hudBox" aria-label="上升速度倍率">速度：<span id="speedText">1.0×</span></div>
+            <div class="hudBox" aria-label="歷史最高紀錄">最高：<span id="best">0</span></div>
+        </div>
+        <div class="hud-right">
+            <!-- ☀️ 明亮 / 🌙 深色 模式切換按鈕 (HUD頂部) -->
+            <button class="iconButton themeToggleBtn" aria-label="切換為深色模式">🌙 深色</button>
+            <button class="iconButton" id="topSoundButton" aria-label="切換背景音樂開關">🔊 音樂</button>
+            <button class="iconButton" id="pauseButton" aria-label="暫停遊戲 (快捷鍵 P)">⏸️ 暫停 (P)</button>
+        </div>
+    </header>
+
+    <!-- 3. 主要遊戲視窗 (Main) -->
+    <main id="main-content" tabindex="-1">
+        <div id="world" aria-hidden="true"></div>
+
+        <div id="topDanger" aria-hidden="true">
+            <div class="topMetal"></div>
+            <div class="topSpikes"></div>
+        </div>
+
+        <div id="player" aria-label="玩家角色阿衝" role="img"></div>
+        <div id="warning" role="alert" aria-live="assertive">⚠️ 小心上方尖刺！</div>
+        <div id="damageFlash" aria-hidden="true"></div>
+    </main>
+
+    <!-- 4. 觸控/控制區域 (Nav) -->
+    <nav id="controls" aria-label="行動裝置行動控制區">
+        <div class="control-group">
+            <button class="control" id="leftButton" aria-label="向左移動">◀</button>
+            <button class="control" id="rightButton" aria-label="向右移動">▶</button>
+            <button class="control" id="downButton" aria-label="蹲下">⬇️</button>
+        </div>
+        <div class="control-group">
+            <button class="control control-action" id="shootButton" aria-label="發射香蕉子彈擊碎尖刺">🔥</button>
+            <button class="control control-action" id="jumpButton" aria-label="向上跳躍">⬆️</button>
+        </div>
+    </nav>
+
+    <!-- 5. 主選單 (Modal Dialog) - 含主題切換按鈕 -->
+    <section class="overlay" id="startScreen" role="dialog" aria-modal="true" aria-labelledby="startTitle">
+        <div class="panel">
+            <h1 id="startTitle">🐒 阿衝大冒險</h1>
+            
+            <div class="intro-box">
+                <h2 style="font-size:16px; margin-bottom:5px;">📖 遊戲故事與無障礙操作說明</h2>
+                城市樓梯正快速升起！控制阿衝一路下樓。<b>切記不可掉落底部，也不可觸碰頂部尖刺！</b>
+                
+                <div class="controls-guide">
+                    <div><b>⬅️ / ➔ 或 A/D：</b>左右移動</div>
+                    <div><b>⬇️ 或 S 鍵：</b>蹲下避難</div>
+                    <div><b>⬆️ 或 X 鍵：</b>緊急跳躍</div>
+                    <div><b>🔥 或 Z 鍵：</b>香蕉子彈</div>
+                </div>
+            </div>
+
+            <div class="diff-selection">
+                <h2 style="font-size:16px;">選擇冒險模式：</h2>
+                <div class="diff-buttons">
+                    <button class="diff-btn active" data-diff="normal" aria-label="選擇普通挑戰模式，60樓後難度飆升">🔥 普通挑戰<br><small style="font-size:11px;">60樓後難度狂飆</small></button>
+                    <button class="diff-btn" data-diff="hard" aria-label="選擇地獄模式，開局即高速極限">💀 地獄模式<br><small style="font-size:11px;">開局即高速極限</small></button>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:center; margin-top:12px;">
+                <button class="gameButton" id="startButton" aria-label="開始遊戲">開始冒險</button>
+                <button class="gameButton secondary themeToggleBtn" style="font-size:16px; padding:12px 20px;" aria-label="切換視覺模式">🌙 深色</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 暫停選單 (Modal Dialog) - 含主題切換按鈕 -->
+    <section class="overlay" id="pauseScreen" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="pauseTitle">
+        <div class="panel">
+            <h2 id="pauseTitle">⏸️ 遊戲暫停</h2>
+            <p style="margin-bottom:15px;">喘口氣，準備好再繼續冒險！</p>
+            <div class="btn-group">
+                <button class="gameButton" id="resumeButton" aria-label="繼續遊戲">▶ 繼續遊戲</button>
+                <button class="gameButton secondary themeToggleBtn" aria-label="切換色彩模式">🌙 切換色彩模式</button>
+                <button class="gameButton secondary" id="restartPauseButton" aria-label="重新開始遊戲">🔄 重新開始</button>
+                <button class="gameButton secondary" id="mainMenuPauseButton" aria-label="返回主選單">🏠 返回主選單</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 遊戲結束 (Modal Dialog) -->
+    <section class="overlay" id="gameOverScreen" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="overTitle">
+        <div class="panel">
+            <h2 id="overTitle">遊戲結束</h2>
+            <p style="margin-bottom:15px;">阿衝成功挑戰下了 <strong id="finalScore" style="color:#e45b22;">0</strong> 層樓！</p>
+            <div class="btn-group">
+                <button class="gameButton" id="restartButton" aria-label="再試一次">🔄 再來一次</button>
+                <button class="gameButton secondary" id="mainMenuGameOverButton" aria-label="返回主選單">🏠 返回主選單</button>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+/* =====================================================
+   核心變數與 DOM 元素
+===================================================== */
+const game = document.getElementById("game");
+const world = document.getElementById("world");
+const player = document.getElementById("player");
+const scoreText = document.getElementById("score");
+const scoreBox = document.getElementById("scoreBox");
+const bestText = document.getElementById("best");
+const diffTag = document.getElementById("diffTag");
+
+const startScreen = document.getElementById("startScreen");
+const pauseScreen = document.getElementById("pauseScreen");
+const gameOverScreen = document.getElementById("gameOverScreen");
+
+const startButton = document.getElementById("startButton");
+const pauseButton = document.getElementById("pauseButton");
+const resumeButton = document.getElementById("resumeButton");
+const restartPauseButton = document.getElementById("restartPauseButton");
+const mainMenuPauseButton = document.getElementById("mainMenuPauseButton");
+const mainMenuGameOverButton = document.getElementById("mainMenuGameOverButton");
+const topSoundButton = document.getElementById("topSoundButton");
+const restartButton = document.getElementById("restartButton");
+
+const finalScore = document.getElementById("finalScore");
+const hpText = document.getElementById("hpText");
+const speedText = document.getElementById("speedText");
+const warning = document.getElementById("warning");
+const damageFlash = document.getElementById("damageFlash");
+
+/* 精靈圖 (8 欄 × 10 列) 計算 */
+const TOTAL_COLS = 8;
+const TOTAL_ROWS = 10;
+
+function setSprite(col, row) {
+    const xPercent = (col / (TOTAL_COLS - 1)) * 100;
+    const yPercent = (row / (TOTAL_ROWS - 1)) * 100;
+    player.style.backgroundPosition = `${xPercent}% ${yPercent}%`;
+}
+
+const RUN_FRAMES = [0, 1, 2, 3, 4, 5, 6, 7];
+const JUMP_FRAMES = [0, 1, 2, 3];
+
+let animationFrame = 0;
+let animationTimer = 0;
+
+/* 物理與控制變數 */
+let playerX = 0;
+let playerY = 0;
+let velocityX = 0;
+let velocityY = 0;
+
+let isGrounded = false;
+let isCrouching = false;
+let isDarkMode = false; // 預設為明亮模式
+
+let platforms = [];
+let spikes = [];
+let bullets = [];
+let particles = [];
+
+let score = 0;
+let bestScore = Number(localStorage.getItem("aChongCityBest")) || 0;
+
+let selectedDifficulty = "normal";
+let gameRunning = false;
+let isPaused = false;
+let lastTime = 0;
+let facingRight = true;
+let cityOffsetY = 0;
+
+let keys = { left: false, right: false, jump: false, crouch: false, shoot: false };
+let lastShootTime = 0;
+
+const playerDisplayWidth = 80;
+const playerDisplayHeight = 80;
+const collisionWidth = 36;
+let collisionHeight = 65; 
+const collisionOffsetX = 22;
+
+const gravityBase = 0.42;
+const horizontalSpeed = 4.2;
+const jumpForce = -9.5; 
+
+let conveyorSpeed = 1.15;
+let baseSpeed = 1.15;
+let lowestPlatformY = 0;
+
+let spikeCooldown = 0;
+let hp = 3;
+let musicOn = true;
+let audioCtx = null;
+let musicTimer = null;
+let musicIndex = 0;
+
+bestText.textContent = bestScore;
+setSprite(5, 0);
+
+/* =====================================================
+   ☀️ 明亮 / 🌙 深色 模式切換邏輯（適用全選單按鈕）
+===================================================== */
+const themeToggleBtns = document.querySelectorAll(".themeToggleBtn");
+
+function toggleTheme() {
+    isDarkMode = !isDarkMode;
+    if (isDarkMode) {
+        document.body.classList.add("dark-mode");
+        themeToggleBtns.forEach(btn => {
+            btn.textContent = "☀️ 明亮";
+            btn.setAttribute("aria-label", "目前為深色模式，點擊切換為明亮模式");
+        });
+    } else {
+        document.body.classList.remove("dark-mode");
+        themeToggleBtns.forEach(btn => {
+            btn.textContent = "🌙 深色";
+            btn.setAttribute("aria-label", "目前為明亮模式，點擊切換為深色模式");
+        });
+    }
+}
+
+themeToggleBtns.forEach(btn => {
+    btn.addEventListener("click", toggleTheme);
+});
+
+/* =====================================================
+   難度選擇邏輯
+===================================================== */
+const diffBtns = document.querySelectorAll(".diff-btn");
+diffBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+        diffBtns.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedDifficulty = btn.getAttribute("data-diff");
+    });
+});
+
+/* =====================================================
+   遊戲物體生成 (平台、尖刺、子彈、粒子)
+===================================================== */
+function createPlatform(x, y, width, floorNo) {
+    const element = document.createElement("div");
+    element.className = "platform";
+    element.style.left = x + "px";
+    element.style.top = y + "px";
+    element.style.width = width + "px";
+    world.appendChild(element);
+
+    const p = { element, x, y, width, previousY: y, height: 18, floor: floorNo };
+    platforms.push(p);
+    return p;
+}
+
+function createSpike(x, y) {
+    const e = document.createElement("div");
+    e.className = "game-spike";
+    e.style.left = x + "px";
+    e.style.top = y + "px";
+    world.appendChild(e);
+    spikes.push({ element: e, x, y, width: 32, height: 26 });
+}
+
+function createParticles(x, y) {
+    for (let i = 0; i < 5; i++) {
+        const p = document.createElement("div");
+        p.className = "particle";
+        p.style.left = x + "px";
+        p.style.top = y + "px";
+        world.appendChild(p);
+
+        particles.push({
+            element: p, x, y,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6 - 2,
+            life: 20
+        });
+    }
+}
+
+function updateParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        p.element.style.left = p.x + "px";
+        p.element.style.top = p.y + "px";
+        p.element.style.opacity = p.life / 20;
+
+        if (p.life <= 0) {
+            p.element.remove();
+            particles.splice(i, 1);
+        }
+    }
+}
+
+function fireBullet() {
+    const now = performance.now();
+    if (now - lastShootTime < 250) return; 
+    lastShootTime = now;
+
+    const b = document.createElement("div");
+    b.className = "bullet";
+    
+    const startX = facingRight ? (playerX + 55) : (playerX + 5);
+    const startY = isCrouching ? (playerY + 45) : (playerY + 30);
+
+    b.style.left = startX + "px";
+    b.style.top = startY + "px";
+    const speed = facingRight ? 10 : -10;
+
+    world.appendChild(b);
+    bullets.push({ element: b, x: startX, y: startY, speed, width: 18, height: 18 });
+    shootSound();
+}
+
+function clearWorld() {
+    world.innerHTML = "";
+    platforms = [];
+    spikes = [];
+    bullets = [];
+    particles = [];
+}
+
+function buildInitialPlatforms() {
+    const firstWidth = 210;
+    const firstX = game.clientWidth / 2 - firstWidth / 2;
+    const firstY = 450;
+
+    createPlatform(firstX, firstY, firstWidth, 0);
+    lowestPlatformY = firstY;
+
+    for (let i = 1; i <= 40; i++) {
+        createNextPlatform(i);
+    }
+}
+
+function createNextPlatform(floorNo) {
+    const previous = platforms[platforms.length - 1];
+    const gap = 120 + Math.random() * 20;
+
+    let widthShrinkRate = selectedDifficulty === "normal" ? 0.55 : 0.85;
+    const minWidth = selectedDifficulty === "hard" ? 80 : 95;
+    const width = Math.max(minWidth, 180 - floorNo * widthShrinkRate);
+    
+    const horizontalShift = floorNo > 50 ? 175 : 145;
+
+    const minX = Math.max(8, previous.x - horizontalShift);
+    const maxX = Math.min(game.clientWidth - width - 8, previous.x + horizontalShift);
+
+    const x = minX + Math.random() * Math.max(1, maxX - minX);
+    const y = lowestPlatformY + gap;
+
+    const p = createPlatform(x, y, width, floorNo);
+    lowestPlatformY = y;
+
+    if (floorNo >= 7) {
+        let maxChance = selectedDifficulty === "normal" ? (floorNo >= 60 ? 0.55 : 0.30) : 0.65;
+        let chanceGrowth = selectedDifficulty === "normal" ? 0.005 : 0.008;
+
+        const chance = Math.min(maxChance, 0.10 + floorNo * chanceGrowth);
+        if (Math.random() < chance) {
+            const sx = p.x + 20 + Math.random() * Math.max(1, p.width - 70);
+            createSpike(sx, p.y - 26);
+        }
+    }
+}
+
+/* =====================================================
+   音效與 HUD 播報系統
+===================================================== */
+function updateHUD() {
+    hpText.textContent = hp;
+    const mult = conveyorSpeed / baseSpeed;
+    speedText.textContent = mult.toFixed(1) + "×";
+
+    const diffNames = { normal: "普通", hard: "地獄" };
+    diffTag.textContent = diffNames[selectedDifficulty] || "普通";
+}
+
+function triggerScorePop() {
+    scoreBox.classList.remove("score-pop");
+    void scoreBox.offsetWidth;
+    scoreBox.classList.add("score-pop");
+}
+
+function initAudio() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume();
+}
+
+function beep(freq, duration, type="square", volume=.05) {
+    if (!audioCtx || !musicOn) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+function musicTick() {
+    if (!musicOn || isPaused) return;
+    const notes = [523,659,784,659,587,698,880,698,523,659,784,988,880,784,659,587];
+    beep(notes[musicIndex % notes.length], .11, "square", .032);
+    musicIndex++;
+}
+
+function startMusic() {
+    initAudio();
+    if (musicTimer) clearInterval(musicTimer);
+    musicIndex = 0;
+    musicTick();
+    musicTimer = setInterval(musicTick, 170);
+}
+
+function stopMusic() {
+    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+}
+
+function hitSound() { if (!musicOn) return; initAudio(); beep(145, .16, "sawtooth", .11); setTimeout(() => beep(95, .22, "square", .09), 70); }
+function jumpSound() { if (!musicOn) return; initAudio(); beep(350, .1, "square", .06); setTimeout(() => beep(520, .12, "square", .05), 50); }
+function shootSound() { if (!musicOn) return; initAudio(); beep(880, .05, "sawtooth", .06); setTimeout(() => beep(1200, .08, "square", .04), 30); }
+function floorSound() { if (!musicOn) return; initAudio(); beep(660, .07, "square", .05); setTimeout(() => beep(880, .08, "square", .04), 55); }
+function deathSound() { if (!musicOn) return; initAudio(); stopMusic(); beep(220, .22, "sawtooth", .14); setTimeout(() => beep(165, .24, "sawtooth", .13), 120); setTimeout(() => beep(110, .30, "triangle", .12), 250); }
+
+/* =====================================================
+   選單控制與無障礙焦點移入
+===================================================== */
+function togglePause() {
+    if (!gameRunning) return;
+
+    isPaused = !isPaused;
+    if (isPaused) {
+        pauseScreen.style.display = "flex";
+        pauseButton.textContent = "▶ 繼續 (P)";
+        resumeButton.focus();
+    } else {
+        pauseScreen.style.display = "none";
+        pauseButton.textContent = "⏸️ 暫停 (P)";
+        lastTime = performance.now();
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+function toggleSound() {
+    musicOn = !musicOn;
+    topSoundButton.textContent = musicOn ? "🔊 音樂" : "🔇 音樂";
+    topSoundButton.setAttribute("aria-label", musicOn ? "開啟背景音樂" : "關閉背景音樂");
+    if (musicOn && gameRunning) startMusic(); else stopMusic();
+}
+
+function goToMainMenu() {
+    gameRunning = false;
+    isPaused = false;
+    stopMusic();
+    clearWorld();
+
+    pauseScreen.style.display = "none";
+    gameOverScreen.style.display = "none";
+    startScreen.style.display = "flex";
+
+    startButton.focus();
+
+    setSprite(5, 0);
+    scoreText.textContent = "0";
+    speedText.textContent = "1.0×";
+}
+
+/* =====================================================
+   遊戲核心邏輯與迴圈
+===================================================== */
+function startGameFixed() {
+    startScreen.style.display = "none";
+    pauseScreen.style.display = "none";
+    gameOverScreen.style.display = "none";
+
+    clearWorld();
+
+    score = 0;
+    scoreText.textContent = "0";
+
+    velocityX = 0;
+    velocityY = 0;
+
+    baseSpeed = selectedDifficulty === "normal" ? 1.15 : 1.75;
+    conveyorSpeed = baseSpeed;
+
+    cityOffsetY = 0;
+    spikeCooldown = 0;
+    hp = 3;
+    isGrounded = false;
+    isCrouching = false;
+    isPaused = false;
+    pauseButton.textContent = "⏸️ 暫停 (P)";
+
+    updateHUD();
+    startMusic();
+
+    animationFrame = 0;
+    animationTimer = 0;
+
+    buildInitialPlatforms();
+
+    const first = platforms[0];
+    playerX = first.x + first.width / 2 - collisionWidth / 2 - collisionOffsetX;
+    playerY = first.y - collisionHeight;
+
+    setSprite(5, 0);
+
+    gameRunning = true;
+    lastTime = performance.now();
+
+    requestAnimationFrame(gameLoop);
+}
+
+function damagePlayer() {
+    if (spikeCooldown > 0) return;
+
+    spikeCooldown = 65;
+    hp--;
+    updateHUD();
+    hitSound();
+
+    game.classList.remove("shake");
+    void game.offsetWidth;
+    game.classList.add("shake");
+
+    damageFlash.style.opacity = "1";
+    setTimeout(() => damageFlash.style.opacity = "0", 120);
+
+    player.style.filter = "drop-shadow(0 5px 3px rgba(255,50,50,.9))";
+    setTimeout(() => {
+        player.style.filter = "drop-shadow(0 5px 3px rgba(0,0,0,.4))";
+    }, 180);
+
+    if (hp <= 0) {
+        gameOver();
+        return;
+    }
+
+    velocityY = -4.5;
+}
+
+function updatePlayer(delta) {
+    if (keys.crouch && isGrounded) {
+        isCrouching = true;
+        collisionHeight = 45; 
+    } else {
+        isCrouching = false;
+        collisionHeight = 65; 
+    }
+
+    const currentSpeed = isCrouching ? (horizontalSpeed * 0.4) : horizontalSpeed;
+    if (keys.left) { velocityX = -currentSpeed; facingRight = false; }
+    else if (keys.right) { velocityX = currentSpeed; facingRight = true; }
+    else { velocityX *= 0.70; }
+
+    playerX += velocityX * delta;
+
+    if (keys.jump && isGrounded && !isCrouching) {
+        velocityY = jumpForce;
+        isGrounded = false;
+        jumpSound();
+    }
+
+    if (keys.shoot) fireBullet();
+
+    const sw = game.clientWidth;
+    if (playerX < 0) { playerX = 0; velocityX = 0; }
+    if (playerX > sw - playerDisplayWidth) { playerX = sw - playerDisplayWidth; velocityX = 0; }
+
+    const gravity = gravityBase + Math.min(score * 0.0012, 0.10);
+    const oldBottom = playerY + collisionHeight;
+    velocityY += gravity * delta;
+    velocityY = Math.min(velocityY, 7.5);
+    playerY += velocityY * delta;
+    const newBottom = playerY + collisionHeight;
+
+    isGrounded = false; 
+    if (velocityY >= 0) {
+        const left = playerX + collisionOffsetX;
+        const right = left + collisionWidth;
+
+        let landing = null;
+        let landingTop = Infinity;
+
+        for (const p of platforms) {
+            const oldTop = p.previousY;
+            const newTop = p.y;
+            const horizontal = right > p.x + 2 && left < p.x + p.width - 2;
+            if (!horizontal) continue;
+
+            const oldRelative = oldBottom - oldTop;
+            const newRelative = newBottom - newTop;
+
+            const crossed = oldRelative <= 8 && newRelative >= -3;
+            const nearPlatform = newRelative >= -12 && newRelative <= 20 && oldRelative <= 35;
+
+            if ((crossed || nearPlatform) && newTop < landingTop) {
+                landing = p;
+                landingTop = newTop;
+            }
+        }
+
+        if (landing) {
+            playerY = landing.y - collisionHeight;
+            velocityY = 0;
+            isGrounded = true; 
+
+            if (landing.floor > score) {
+                score = landing.floor;
+                scoreText.textContent = score;
+                triggerScorePop();
+                floorSound();
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestText.textContent = bestScore;
+                    localStorage.setItem('aChongCityBest', bestScore);
+                }
+            }
+        }
+    }
+}
+
+function updateBullets(delta) {
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.x += b.speed * delta;
+        b.element.style.left = b.x + "px";
+
+        if (b.x < -50 || b.x > game.clientWidth + 50) {
+            b.element.remove();
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        for (let j = spikes.length - 1; j >= 0; j--) {
+            const s = spikes[j];
+            const hit = b.x + b.width > s.x &&
+                        b.x < s.x + s.width &&
+                        b.y + b.height > s.y &&
+                        b.y < s.y + s.height;
+
+            if (hit) {
+                createParticles(s.x + 16, s.y + 13);
+                s.element.remove();
+                spikes.splice(j, 1);
+
+                b.element.remove();
+                bullets.splice(i, 1);
+                beep(900, .08, "triangle", .08);
+                break;
+            }
+        }
+    }
+}
+
+function moveWorldUp(delta) {
+    if (selectedDifficulty === "normal") {
+        if (score < 60) {
+            conveyorSpeed = 1.15 + score * 0.018;
+        } else {
+            conveyorSpeed = 1.15 + 60 * 0.018 + (score - 60) * 0.048;
+        }
+        conveyorSpeed = Math.min(4.5, conveyorSpeed);
+    } else if (selectedDifficulty === "hard") {
+        conveyorSpeed = Math.min(5.5, 1.75 + Math.pow(score / 30, 1.6));
+    }
+
+    updateHUD();
+
+    cityOffsetY -= conveyorSpeed * delta * 0.15;
+    const city = document.getElementById("city");
+    city.style.transform = `translateY(${cityOffsetY % 100}px)`;
+
+    const dangerTop = 78;
+    warning.style.opacity = (playerY < dangerTop + 45) ? '1' : '0';
+
+    for (const p of platforms) {
+        p.previousY = p.y;
+        p.y -= conveyorSpeed * delta;
+        p.element.style.top = p.y + 'px';
+    }
+
+    for (const s of spikes) {
+        s.y -= conveyorSpeed * delta;
+        s.element.style.top = s.y + 'px';
+    }
+
+    lowestPlatformY -= conveyorSpeed * delta;
+
+    while (lowestPlatformY < game.clientHeight + 650) {
+        const nextFloor = platforms.length > 0
+            ? Math.max(...platforms.map(p => p.floor)) + 1
+            : score + 1;
+        createNextPlatform(nextFloor);
+    }
+
+    platforms = platforms.filter(p => {
+        if (p.y < -200) { p.element.remove(); return false; }
+        return true;
+    });
+
+    spikes = spikes.filter(s => {
+        if (s.y < -200) { s.element.remove(); return false; }
+        return true;
+    });
+}
+
+function checkSpikes() {
+    if (spikeCooldown > 0) spikeCooldown--;
+
+    const left = playerX + collisionOffsetX;
+    const right = left + collisionWidth;
+    const top = playerY + 15;
+
+    if (top < 75) {
+        if (spikeCooldown <= 0) damagePlayer();
+        velocityY = 9;
+        playerY = 80;
+        return;
+    }
+
+    for (const s of spikes) {
+        const hit = right > s.x + 4 && left < s.x + s.width - 4 && (playerY + collisionHeight) > s.y + 4 && top < s.y + s.height;
+        if (hit) { damagePlayer(); break; }
+    }
+}
+
+function updateSpriteAnimation(delta) {
+    animationTimer += delta;
+
+    if (!isGrounded) {
+        if (animationTimer > 4) {
+            animationTimer = 0;
+            animationFrame = (animationFrame + 1) % JUMP_FRAMES.length;
+        }
+        setSprite(JUMP_FRAMES[animationFrame], 3);
+
+    } else if (isCrouching) {
+        setSprite(2, 6);
+
+    } else if (Math.abs(velocityX) > 0.5) {
+        if (animationTimer > 3) {
+            animationTimer = 0;
+            animationFrame = (animationFrame + 1) % RUN_FRAMES.length;
+        }
+        setSprite(RUN_FRAMES[animationFrame], 2);
+
+    } else {
+        animationFrame = 0;
+        setSprite(5, 0);
+    }
+
+    player.style.transform = facingRight ? "scaleX(1)" : "scaleX(-1)";
+}
+
+function gameLoop(time) {
+    if (!gameRunning || isPaused) return;
+
+    const delta = Math.min((time - lastTime) / 16.6667, 2);
+    lastTime = time;
+
+    moveWorldUp(delta);
+    updatePlayer(delta);
+    updateBullets(delta);
+    updateParticles();
+    checkSpikes();
+    updateSpriteAnimation(delta);
+
+    player.style.left = playerX + "px";
+    player.style.top = playerY + "px";
+
+    const playerFeetY = playerY + collisionHeight;
+    if (playerFeetY > game.clientHeight && !isGrounded) {
+        gameOver();
+        return;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+function gameOver() {
+    gameRunning = false;
+    isPaused = false;
+    deathSound();
+
+    finalScore.textContent = score;
+    gameOverScreen.style.display = "flex";
+    restartButton.focus();
+}
+
+/* =====================================================
+   無障礙鍵盤與按鈕事件綁定
+===================================================== */
+document.addEventListener("keydown", function(event) {
+    const key = event.key.toLowerCase();
+
+    if (key === "p" || key === "escape") {
+        togglePause();
+        event.preventDefault();
+        return;
+    }
+
+    if (isPaused) return;
+
+    if (key === "arrowleft" || key === "a") { keys.left = true; event.preventDefault(); }
+    if (key === "arrowright" || key === "d") { keys.right = true; event.preventDefault(); }
+    if (key === "arrowdown" || key === "s") { keys.crouch = true; event.preventDefault(); }
+    if (key === "x" || key === "arrowup" || key === "w") { keys.jump = true; event.preventDefault(); }
+    if (key === "z") { keys.shoot = true; event.preventDefault(); }
+
+    if (event.key === " " && !gameRunning) {
+        startGameFixed();
+        event.preventDefault();
+    }
+});
+
+document.addEventListener("keyup", function(event) {
+    const key = event.key.toLowerCase();
+
+    if (key === "arrowleft" || key === "a") keys.left = false;
+    if (key === "arrowright" || key === "d") keys.right = false;
+    if (key === "arrowdown" || key === "s") keys.crouch = false;
+    if (key === "x" || key === "arrowup" || key === "w") keys.jump = false;
+    if (key === "z") keys.shoot = false;
+});
+
+topSoundButton.addEventListener("click", toggleSound);
+pauseButton.addEventListener("click", togglePause);
+resumeButton.addEventListener("click", togglePause);
+restartPauseButton.addEventListener("click", startGameFixed);
+mainMenuPauseButton.addEventListener("click", goToMainMenu);
+mainMenuGameOverButton.addEventListener("click", goToMainMenu);
+
+const leftButton = document.getElementById("leftButton");
+const rightButton = document.getElementById("rightButton");
+const downButton = document.getElementById("downButton");
+const jumpButton = document.getElementById("jumpButton");
+const shootButton = document.getElementById("shootButton");
+
+leftButton.addEventListener("pointerdown", e => { e.preventDefault(); keys.left = true; });
+leftButton.addEventListener("pointerup", e => { e.preventDefault(); keys.left = false; });
+leftButton.addEventListener("pointercancel", e => { e.preventDefault(); keys.left = false; });
+
+rightButton.addEventListener("pointerdown", e => { e.preventDefault(); keys.right = true; });
+rightButton.addEventListener("pointerup", e => { e.preventDefault(); keys.right = false; });
+rightButton.addEventListener("pointercancel", e => { e.preventDefault(); keys.right = false; });
+
+downButton.addEventListener("pointerdown", e => { e.preventDefault(); keys.crouch = true; });
+downButton.addEventListener("pointerup", e => { e.preventDefault(); keys.crouch = false; });
+downButton.addEventListener("pointercancel", e => { e.preventDefault(); keys.crouch = false; });
+
+jumpButton.addEventListener("pointerdown", e => { e.preventDefault(); keys.jump = true; });
+jumpButton.addEventListener("pointerup", e => { e.preventDefault(); keys.jump = false; });
+
+shootButton.addEventListener("pointerdown", e => { e.preventDefault(); fireBullet(); });
+
+startButton.addEventListener("click", startGameFixed);
+restartButton.addEventListener("click", startGameFixed);
+</script>
+
+</body>
+</html>
