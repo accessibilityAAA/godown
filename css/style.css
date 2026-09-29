@@ -1,0 +1,407 @@
+/* ==========================================================================
+   Astraea AI Tarot - 全局與配色防隱形修正樣式表 (css/style.css)
+   ========================================================================== */
+
+:root {
+  --bg-main: #0a0518;
+  --card-bg: rgba(23, 14, 43, 0.75);
+  --glass-border: rgba(192, 132, 252, 0.25);
+  --text-main: #f3e8ff;
+  --text-sub: #d8b4fe;
+  --primary-purple: #a855f7;
+  --border-color: rgba(216, 180, 254, 0.25);
+  --glow-color: rgba(168, 85, 247, 0.4);
+  --gold-gradient: linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%);
+  --gold-glow: rgba(245, 158, 11, 0.45);
+  --header-bg: rgba(26, 11, 54, 0.95);
+  
+  --footer-bg: #12072b;
+  --footer-text: #e9d5ff;
+  --footer-link: #fef08a;
+  --footer-link-hover: #f59e0b;
+  --input-bg: rgba(0, 0, 0, 0.35);
+  --focus-ring: #f59e0b;
+}
+
+body.light-mode {
+  --bg-main: #f4f1ea;
+  --card-bg: #ffffff;
+  --glass-border: rgba(126, 34, 206, 0.2);
+  --text-main: #1f2937;
+  --text-sub: #581c87;
+  --primary-purple: #7e22ce;
+  --border-color: #d1d5db;
+  --glow-color: rgba(126, 34, 206, 0.2);
+  --header-bg: #5b21b6;
+  
+  --footer-bg: #e8e3d9;
+  --footer-text: #374151;
+  --footer-link: #6b21a8;
+  --footer-link-hover: #b45309;
+  --input-bg: #ffffff;
+}
+
+body.large-mode {
+  font-size: 1.05rem !important;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden !important;
+}
+
+body {
+  background-color: var(--bg-main);
+  background-image: 
+    radial-gradient(circle at 50% 15%, rgba(168, 85, 247, 0.18) 0%, transparent 55%),
+    radial-gradient(circle at 80% 80%, rgba(245, 158, 11, 0.1) 0%, transparent 45%);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.site-header {
+  background: var(--header-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  padding: 0.45rem 0.85rem;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.header-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.brand-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  background: linear-gradient(135deg, #fef08a 0%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.btn-head {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-color);
+  color: #ffffff;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: bold;
+  cursor: pointer;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.btn-head option {
+  background-color: #1a0b36 !important;
+  color: #f3e8ff !important;
+}
+
+/* 主容器 */
+.container {
+  max-width: 1000px;
+  margin: 0.5rem auto;
+  padding: 0 0.75rem;
+  flex: 1;
+}
+
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+  padding: 0.85rem;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+}
+
+/* 預設問題標籤 */
+.preset-tags-wrapper {
+  display: flex !important;
+  gap: 0.35rem !important;
+  justify-content: center !important;
+  margin: 0.4rem 0 !important;
+  overflow-x: auto !important;
+  padding-bottom: 0.2rem !important;
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap !important;
+}
+
+.preset-tags-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+.kw-btn {
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid var(--primary-purple);
+  color: var(--text-main);
+  padding: 0.32rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: bold;
+  cursor: pointer;
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* 大按鈕 */
+.btn-gold {
+  background: var(--gold-gradient);
+  color: #ffffff;
+  border: 1px solid #fef08a;
+  font-weight: 800;
+  padding: 0.55rem 1.6rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 4px 18px var(--gold-glow);
+  transition: all 0.25s ease;
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* 🌟 關鍵修復：提示訊息框（深紅橘底 + 深棕黑字，100% 高對比清晰） */
+.custom-toast-msg {
+  background: #fef3c7 !important;
+  border: 2px solid #f59e0b !important;
+  color: #78350f !important;
+  padding: 0.45rem 1rem !important;
+  border-radius: 0.5rem !important;
+  font-weight: 900 !important;
+  font-size: 0.9rem !important;
+  margin: 0.3rem auto 0.5rem auto !important;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4) !important;
+}
+
+.input-error-shake {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5) !important;
+}
+
+/* 解牌結果區域 */
+.result-layout-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1rem;
+  align-items: start;
+  text-align: left;
+  margin-top: 0.75rem;
+}
+
+.result-left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.result-mini-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.cards-detail-list {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+}
+
+.card-detail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.card-detail-item:last-child {
+  border-bottom: none;
+}
+
+.ai-chat-box {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 0.85rem;
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+/* Footer */
+.site-footer {
+  background: var(--footer-bg);
+  border-top: 1px solid var(--border-color);
+  padding: 1.25rem 1rem;
+  font-size: 0.85rem;
+  color: var(--footer-text);
+  flex-shrink: 0;
+  margin-top: 1.5rem;
+}
+
+.footer-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.footer-lang-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 1rem;
+}
+
+.footer-lang-links a {
+  color: var(--footer-link);
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 0.65rem;
+}
+
+.footer-policy-links a {
+  color: var(--footer-link);
+  text-decoration: none;
+  font-weight: bold;
+}
+
+/* Modal 彈窗 */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  justify-content: center;
+  align-items: center;
+  z-index: 99999;
+  padding: 1rem;
+}
+
+.modal-card {
+  background: #120826;
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+  max-width: 520px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  color: #f59e0b;
+  font-size: 1.05rem;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #c084fc;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+  font-size: 0.88rem;
+  color: #f3e8ff;
+  text-align: left;
+}
+
+@media (max-width: 600px) {
+  .header-inner {
+    flex-direction: row !important;
+    justify-content: space-between !important;
+  }
+
+  .brand-title {
+    font-size: 0.95rem !important;
+  }
+
+  .btn-head {
+    padding: 0.18rem 0.4rem !important;
+    font-size: 0.72rem !important;
+    min-height: 26px !important;
+  }
+
+  .preset-tags-wrapper {
+    justify-content: flex-start !important;
+  }
+
+  .spread-btn-group {
+    display: flex !important;
+    gap: 0.2rem !important;
+    width: 100% !important;
+  }
+
+  .spread-btn-group button {
+    flex: 1 !important;
+    padding: 0.3rem 0.15rem !important;
+    font-size: 0.72rem !important;
+    white-space: nowrap !important;
+  }
+
+  .result-layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+  }
+}
